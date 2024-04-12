@@ -11,11 +11,11 @@ public:
 
     void callback(const nav_msgs::Odometry::ConstPtr& msg) {
         // Access pose from the Odometry message
-        geometry_msgs::Pose pose = msg->pose.pose;
+        // geometry_msgs::PoseWithCovariance pose = msg->pose;
         tf::Transform transform;
-        transform.setOrigin(tf::Vector3(msg->pose.position.x, msg->pose.position.y, msg->pose.position.z));
+        transform.setOrigin(tf::Vector3(msg->pose.pose.position.x, msg->pose.pose.position.y, msg->pose.pose.position.z));
         transform.setRotation(tf::Quaternion(
-            pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w));
+            msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, msg->pose.pose.orientation.z, msg->pose.pose.orientation.w));
         br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), "world", "wheel_odom"));
     }
 
