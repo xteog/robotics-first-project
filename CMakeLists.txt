@@ -4,6 +4,8 @@ project(first_project)
 find_package(catkin REQUIRED COMPONENTS
     roscpp
     sensor_msgs
+    std_msgs
+    nav_msgs
 )
 
 catkin_package()
