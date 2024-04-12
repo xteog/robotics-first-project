@@ -2,10 +2,18 @@
 #include "sensor_msgs/NavSatFix.h"
 #include "nav_msgs/Odometry.h"
 
+#include <cmath>
+
+#define PI 3.14159265358979323846
+#define EQUATORIAL_RADIUS 6378137
+#define POLAR_RADIUS 6356752.3142 
+
+using namespace std;
+
 void convertToOdom(const sensor_msgs::NavSatFix *, float *, float *);
-void latLon_to_ECEF(float *);
-void ECEF_to_ENU(float *);
-void ENU_to_ONOM(float *, float *);
+void geodetic_to_ECEF(float *, float *);
+void ECEF_to_ONOM(float *, float *, float *, float *);
+float radians(float);
 
 class gps_to_odom_node
 {
@@ -19,12 +27,12 @@ private:
     ros::Timer timer;
 
 public:
-    gps_to_odom()
+    gps_to_odom_node()
     {
-        sub = n.subscribe("/fix", 1, &gps_to_odom::navSatFixCallback, this);
+        sub = n.subscribe("/fix", 1, &gps_to_odom_node::navSatFixCallback, this);
         pub = n.advertise<nav_msgs::Odometry>("/gps_odom", 1);
 
-        timer = n.createTimer(ros::Duration(1), &gps_to_odom::odomCallback, this);
+        timer = n.createTimer(ros::Duration(1), &gps_to_odom_node::odomCallback, this);
     }
 
     void navSatFixCallback(const sensor_msgs::NavSatFix::ConstPtr &msg)
@@ -36,7 +44,7 @@ public:
     {
         nav_msgs::Odometry msg;
         float odom[3];
-        float reference[3];
+        float reference[3] = {0};
 
         convertToOdom(&(this->msg), reference, odom);
 
@@ -51,20 +59,49 @@ public:
 
 void convertToOdom(const sensor_msgs::NavSatFix *msg, float *reference, float *result)
 {
-    result[0] = msg->latitude;
-    result[1] = msg->longitude;
-    result[2] = msg->altitude;
+    float geodetic[3], ref_ecef[3];
+    float ecef[3] = {0};
 
-    latLon_to_ECEF(result);
-    ECEF_to_ENU(result);
-    ENU_to_ONOM(reference, result);
+    geodetic[0] = radians(msg->latitude);
+    geodetic[1] = radians(msg->longitude);
+    geodetic[2] = radians(msg->altitude);
+
+    geodetic_to_ECEF(geodetic, ecef);
+    geodetic_to_ECEF(reference, ref_ecef);
+
+    ECEF_to_ONOM(geodetic, ecef, ref_ecef, result);
 }
 
-void latLon_to_ECEF(float *arr) {}
+void geodetic_to_ECEF(float *geodetic, float *result)
+{
+    float x = geodetic[0];
+    float y = geodetic[1];
+    float z = geodetic[2];
+    float N, e_sqr;
 
-void ECEF_to_ENU(float *arr) {}
+    e_sqr = 1 - POLAR_RADIUS / EQUATORIAL_RADIUS * POLAR_RADIUS / EQUATORIAL_RADIUS;
+    N = EQUATORIAL_RADIUS / sqrt(1 - e_sqr * sin(x));
 
-void ENU_to_ONOM(float *reference, float *arr) {}
+    result[0] = (N + z) * cos(x) * cos(y);
+    result[1] = (N + z) * cos(x) * sin(y);
+    result[2] = (N * (1 - e_sqr) + z) * sin(x);
+}
+
+void ECEF_to_ONOM(float *geodetic, float *ecef, float *reference, float *result)
+{
+    float x = ecef[0] - reference[0];
+    float y = ecef[1] - reference[1];
+    float z = ecef[2] - reference[2];
+
+    result[0] = -sin(geodetic[1]) * x + cos(geodetic[1]) * y;
+    result[1] = -sin(geodetic[0]) * cos(geodetic[1]) * x - sin(geodetic[0]) * sin(geodetic[1]) * y + cos(geodetic[0]) * z;
+    result[2] = cos(geodetic[0]) * cos(geodetic[1]) * x + cos(geodetic[0]) * sin(geodetic[1]) * y + sin(geodetic[0]) * z;
+}
+
+float radians(float degrees)
+{
+    return degrees * (PI / 180);
+}
 
 int main(int argc, char **argv)
 {
