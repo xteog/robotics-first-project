@@ -1,4 +1,0 @@
-<launch>
-<node pkg="first_project" type = "odom_to_tf" name = "odom_to_tf"/>
-</launch>
-
