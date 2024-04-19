@@ -6,16 +6,24 @@
 
 #define PI 3.14159265358979323846
 #define EQUATORIAL_RADIUS 6378137
-#define POLAR_RADIUS 6356752.3142 
+#define POLAR_RADIUS 6356752.3142
 
 using namespace std;
 
-void convertToOdom(const sensor_msgs::NavSatFix *, float *, float *, float *);
-void geodetic_to_ECEF(float *, float *);
-void ECEF_to_ENU(float *, float *, float *, float *, float *);
-float radians(float);
+struct Vector
+{
+    float x;
+    float y;
+    float z;
+};
 
-class gps_to_odom_node
+void convertToOdom(const sensor_msgs::NavSatFix *, Vector *, Vector *);
+void geodetic_to_ECEF(Vector *, Vector *);
+void ECEF_to_ONOM(Vector *, Vector *, Vector *, Vector *);
+float radians(float);
+Vector pointsDirection(Vector, Vector);
+
+class GpsToOdom
 {
     sensor_msgs::NavSatFix msg;
 
@@ -26,13 +34,19 @@ private:
     ros::Publisher pub;
     ros::Timer timer;
 
+    bool first;
+    Vector reference;
+    Vector prev_odom = {0, 0, 0};
+
 public:
-    gps_to_odom_node()
+    GpsToOdom()
     {
-        sub = n.subscribe("/fix", 1, &gps_to_odom_node::navSatFixCallback, this);
+        first = true;
+
+        sub = n.subscribe("/fix", 1000, &GpsToOdom::navSatFixCallback, this);
         pub = n.advertise<nav_msgs::Odometry>("/gps_odom", 1);
-        
-        timer = n.createTimer(ros::Duration(1), &gps_to_odom_node::odomCallback, this);
+
+        timer = n.createTimer(ros::Duration(1), &GpsToOdom::odomCallback, this);
     }
 
     void navSatFixCallback(const sensor_msgs::NavSatFix::ConstPtr &msg)
@@ -43,75 +57,83 @@ public:
     void odomCallback(const ros::TimerEvent &)
     {
         nav_msgs::Odometry msg;
-        ros::NodeHandle n;
-        float odom[3];
-        float reference[3];
-        float reference_geo[3];
-        n.getParam("latitude_reference", reference[0]);
-        n.getParam("longitude_reference", reference[1]);
-        n.getParam("altitude_reference", reference[2]);
-        reference_geo[0] = radians(reference[0]);
-        reference_geo[1] = radians(reference[1]);
-        reference_geo[2] = reference[2];
-        ROS_INFO("latitude: %f", reference[0]);
-        ROS_INFO("longitude: %f", reference[1]);
-        ROS_INFO("altitude: %f", reference[2]);
-        
-        // Ho aggiunto reference_geo
-        convertToOdom(&(this->msg), reference, odom, reference_geo);
+        Vector odom, orientation;
 
-        msg.pose.pose.position.x = odom[0];
-        msg.pose.pose.position.y = odom[1];
-        msg.pose.pose.position.z = odom[2];
-        // msg.pose.pose.orientation = 0;
+        if (first)
+        {
+            reference.x = radians(this->msg.latitude);
+            reference.y = radians(this->msg.longitude);
+            reference.z = radians(this->msg.altitude);
+            first = false;
+        }
+
+        convertToOdom(&(this->msg), &reference, &odom);
+
+        msg.pose.pose.position.x = odom.x;
+        msg.pose.pose.position.y = odom.y;
+        msg.pose.pose.position.z = odom.z;
+        orientation = pointsDirection(prev_odom, odom);
+        msg.pose.pose.orientation.w = orientation.x;
+        msg.pose.pose.orientation.z = orientation.y;
+
+        prev_odom = odom;
 
         pub.publish(msg);
     }
 };
 
-void convertToOdom(const sensor_msgs::NavSatFix *msg, float *reference, float *result, float *reference_geo)
+void convertToOdom(const sensor_msgs::NavSatFix *msg, Vector *reference, Vector *result)
 {
-    float geodetic[3], ref_ecef[3];
-    float ecef[3] = {0};
+    Vector geodetic, ref_ecef, ecef;
 
-    geodetic[0] = radians(msg->latitude);
-    geodetic[1] = radians(msg->longitude);
-    //geodetic[2] = radians(msg->altitude);
-    geodetic[2] = msg->altitude;
+    geodetic.x = radians(msg->latitude);
+    geodetic.y = radians(msg->longitude);
+    geodetic.z = radians(msg->altitude);
 
-    geodetic_to_ECEF(geodetic, ecef);
-    geodetic_to_ECEF(reference, ref_ecef);
+    geodetic_to_ECEF(&geodetic, &ecef);
+    geodetic_to_ECEF(reference, &ref_ecef);
 
-    ECEF_to_ENU(geodetic, ecef, ref_ecef, result, reference_geo);
+    ECEF_to_ONOM(&geodetic, &ecef, &ref_ecef, result);
 }
 
-void geodetic_to_ECEF(float *geodetic, float *result)
+void geodetic_to_ECEF(Vector *geodetic, Vector *result)
 {
-    float x = geodetic[0];
-    float y = geodetic[1];
-    float z = geodetic[2];
+    float x = geodetic->x;
+    float y = geodetic->y;
+    float z = geodetic->z;
     float N, e_sqr;
 
-    // ho cambiato un po' le formule
-    e_sqr = 1 - pow(POLAR_RADIUS, 2) / pow(EQUATORIAL_RADIUS, 2);
-    N = EQUATORIAL_RADIUS / sqrt(1 - e_sqr * pow((sin(x)), 2));
+    e_sqr = 1 - POLAR_RADIUS / EQUATORIAL_RADIUS * POLAR_RADIUS / EQUATORIAL_RADIUS;
+    N = EQUATORIAL_RADIUS / sqrt(1 - e_sqr * sin(x));
 
-    result[0] = (N + z) * cos(x) * cos(y);
-    result[1] = (N + z) * cos(x) * sin(y);
-    result[2] = (N * (1 - e_sqr) + z) * sin(x);
+    result->x = (N + z) * cos(x) * cos(y);
+    result->y = (N + z) * cos(x) * sin(y);
+    result->z = (N * (1 - e_sqr) + z) * sin(x);
 }
 
-void ECEF_to_ENU(float *geodetic, float *ecef, float *reference, float *result, float *reference_geo)
+void ECEF_to_ONOM(Vector *geodetic, Vector *ecef, Vector *reference, Vector *result)
 {
-    
-    float x = ecef[0] - reference[0];
-    float y = ecef[1] - reference[1];
-    float z = ecef[2] - reference[2];
-    
-    // ho cambiato gli elementi della matrice
-    result[0] = -sin(reference_geo[1]) * x + cos(reference_geo[1]) * y;
-    result[1] = -sin(reference_geo[0]) * cos(reference_geo[1]) * x - sin(reference_geo[0]) * sin(reference_geo[1]) * y + cos(reference_geo[0]) * z;
-    result[2] = cos(reference_geo[0]) * cos(reference_geo[1]) * x + cos(reference_geo[0]) * sin(reference_geo[1]) * y + sin(reference_geo[0]) * z;
+    float x = ecef->x - reference->x;
+    float y = ecef->y - reference->y;
+    float z = ecef->z - reference->z;
+
+    float lat = geodetic->x;
+    float lon = geodetic->y;
+
+    result->x = -sin(lon) * x + cos(lon) * y;
+    result->y = -sin(lat) * cos(lon) * x - sin(lat) * sin(lon) * y + cos(lat) * z;
+    result->z = cos(lat) * cos(lon) * x + cos(lat) * sin(lon) * y + sin(lat) * z;
+}
+
+Vector pointsDirection(Vector v, Vector s)
+{
+    float angle;
+    Vector orientation;
+
+    orientation.x = s.x - v.x;
+    orientation.y = s.y - v.y;
+
+    return orientation;
 }
 
 float radians(float degrees)
@@ -124,7 +146,7 @@ int main(int argc, char **argv)
 
     ros::init(argc, argv, "gps_to_odom");
 
-    gps_to_odom_node node;
+    GpsToOdom node;
 
     ros::spin();
 
