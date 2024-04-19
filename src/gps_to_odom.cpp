@@ -10,9 +10,9 @@
 
 using namespace std;
 
-void convertToOdom(const sensor_msgs::NavSatFix *, float *, float *);
+void convertToOdom(const sensor_msgs::NavSatFix *, float *, float *, float *);
 void geodetic_to_ECEF(float *, float *);
-void ECEF_to_ONOM(float *, float *, float *, float *);
+void ECEF_to_ENU(float *, float *, float *, float *, float *);
 float radians(float);
 
 class gps_to_odom_node
@@ -31,7 +31,7 @@ public:
     {
         sub = n.subscribe("/fix", 1, &gps_to_odom_node::navSatFixCallback, this);
         pub = n.advertise<nav_msgs::Odometry>("/gps_odom", 1);
-
+        
         timer = n.createTimer(ros::Duration(1), &gps_to_odom_node::odomCallback, this);
     }
 
@@ -43,10 +43,22 @@ public:
     void odomCallback(const ros::TimerEvent &)
     {
         nav_msgs::Odometry msg;
+        ros::NodeHandle n;
         float odom[3];
-        float reference[3] = {0};
-
-        convertToOdom(&(this->msg), reference, odom);
+        float reference[3];
+        float reference_geo[3];
+        n.getParam("latitude_reference", reference[0]);
+        n.getParam("longitude_reference", reference[1]);
+        n.getParam("altitude_reference", reference[2]);
+        reference_geo[0] = radians(reference[0]);
+        reference_geo[1] = radians(reference[1]);
+        reference_geo[2] = reference[2];
+        ROS_INFO("latitude: %f", reference[0]);
+        ROS_INFO("longitude: %f", reference[1]);
+        ROS_INFO("altitude: %f", reference[2]);
+        
+        // Ho aggiunto reference_geo
+        convertToOdom(&(this->msg), reference, odom, reference_geo);
 
         msg.pose.pose.position.x = odom[0];
         msg.pose.pose.position.y = odom[1];
@@ -57,19 +69,20 @@ public:
     }
 };
 
-void convertToOdom(const sensor_msgs::NavSatFix *msg, float *reference, float *result)
+void convertToOdom(const sensor_msgs::NavSatFix *msg, float *reference, float *result, float *reference_geo)
 {
     float geodetic[3], ref_ecef[3];
     float ecef[3] = {0};
 
     geodetic[0] = radians(msg->latitude);
     geodetic[1] = radians(msg->longitude);
-    geodetic[2] = radians(msg->altitude);
+    //geodetic[2] = radians(msg->altitude);
+    geodetic[2] = msg->altitude;
 
     geodetic_to_ECEF(geodetic, ecef);
     geodetic_to_ECEF(reference, ref_ecef);
 
-    ECEF_to_ONOM(geodetic, ecef, ref_ecef, result);
+    ECEF_to_ENU(geodetic, ecef, ref_ecef, result, reference_geo);
 }
 
 void geodetic_to_ECEF(float *geodetic, float *result)
@@ -79,23 +92,26 @@ void geodetic_to_ECEF(float *geodetic, float *result)
     float z = geodetic[2];
     float N, e_sqr;
 
-    e_sqr = 1 - POLAR_RADIUS / EQUATORIAL_RADIUS * POLAR_RADIUS / EQUATORIAL_RADIUS;
-    N = EQUATORIAL_RADIUS / sqrt(1 - e_sqr * sin(x));
+    // ho cambiato un po' le formule
+    e_sqr = 1 - pow(POLAR_RADIUS, 2) / pow(EQUATORIAL_RADIUS, 2);
+    N = EQUATORIAL_RADIUS / sqrt(1 - e_sqr * pow((sin(x)), 2));
 
     result[0] = (N + z) * cos(x) * cos(y);
     result[1] = (N + z) * cos(x) * sin(y);
     result[2] = (N * (1 - e_sqr) + z) * sin(x);
 }
 
-void ECEF_to_ONOM(float *geodetic, float *ecef, float *reference, float *result)
+void ECEF_to_ENU(float *geodetic, float *ecef, float *reference, float *result, float *reference_geo)
 {
+    
     float x = ecef[0] - reference[0];
     float y = ecef[1] - reference[1];
     float z = ecef[2] - reference[2];
-
-    result[0] = -sin(geodetic[1]) * x + cos(geodetic[1]) * y;
-    result[1] = -sin(geodetic[0]) * cos(geodetic[1]) * x - sin(geodetic[0]) * sin(geodetic[1]) * y + cos(geodetic[0]) * z;
-    result[2] = cos(geodetic[0]) * cos(geodetic[1]) * x + cos(geodetic[0]) * sin(geodetic[1]) * y + sin(geodetic[0]) * z;
+    
+    // ho cambiato gli elementi della matrice
+    result[0] = -sin(reference_geo[1]) * x + cos(reference_geo[1]) * y;
+    result[1] = -sin(reference_geo[0]) * cos(reference_geo[1]) * x - sin(reference_geo[0]) * sin(reference_geo[1]) * y + cos(reference_geo[0]) * z;
+    result[2] = cos(reference_geo[0]) * cos(reference_geo[1]) * x + cos(reference_geo[0]) * sin(reference_geo[1]) * y + sin(reference_geo[0]) * z;
 }
 
 float radians(float degrees)
