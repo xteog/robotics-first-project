@@ -1,6 +1,7 @@
 <launch>
  <param name="root_frame" value="world" />
  <param name="child_frame" value="odom" />
+ 
  <param name="latitude_reference" value="45.477669461666665" />
  <param name="longitude_reference" value="9.22674018" />
  <param name="altitude_reference" value="169.039" />
@@ -18,7 +19,7 @@
     </group>
 
     <group>
-        <node pkg="first_project" name="gps_odom_to_tf" type="odom_to_tf">
+        <node pkg="first_project" name="odom_to_tf" type="odom_to_tf">
             <param name="child_frame" value="gps_odom" />
             <remap from="input_odom" to="gps_odom" />
 

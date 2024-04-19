@@ -17,9 +17,9 @@ struct Vector
     float z;
 };
 
-void convertToOdom(const sensor_msgs::NavSatFix *, Vector *, Vector *);
-void geodetic_to_ECEF(Vector *, Vector *);
-void ECEF_to_ONOM(Vector *, Vector *, Vector *, Vector *);
+Vector convertToOdom(const sensor_msgs::NavSatFix *, Vector);
+Vector geodetic_to_ECEF(Vector);
+Vector ECEF_to_ONOM(Vector, Vector);
 float radians(float);
 Vector pointsDirection(Vector, Vector);
 
@@ -34,19 +34,20 @@ private:
     ros::Publisher pub;
     ros::Timer timer;
 
-    bool first;
     Vector reference;
     Vector prev_odom = {0, 0, 0};
 
 public:
     GpsToOdom()
     {
-        first = true;
-
         sub = n.subscribe("/fix", 1000, &GpsToOdom::navSatFixCallback, this);
         pub = n.advertise<nav_msgs::Odometry>("/gps_odom", 1);
 
         timer = n.createTimer(ros::Duration(1), &GpsToOdom::odomCallback, this);
+
+        n.getParam("latitude_reference", reference.x);
+        n.getParam("longitude_reference", reference.y);
+        n.getParam("altitude_reference", reference.z);
     }
 
     void navSatFixCallback(const sensor_msgs::NavSatFix::ConstPtr &msg)
@@ -59,22 +60,17 @@ public:
         nav_msgs::Odometry msg;
         Vector odom, orientation;
 
-        if (first)
-        {
-            reference.x = radians(this->msg.latitude);
-            reference.y = radians(this->msg.longitude);
-            reference.z = radians(this->msg.altitude);
-            first = false;
-        }
-
-        convertToOdom(&(this->msg), &reference, &odom);
+        odom = convertToOdom(&(this->msg), reference);
 
         msg.pose.pose.position.x = odom.x;
         msg.pose.pose.position.y = odom.y;
         msg.pose.pose.position.z = odom.z;
+        
         orientation = pointsDirection(prev_odom, odom);
-        msg.pose.pose.orientation.w = orientation.x;
-        msg.pose.pose.orientation.z = orientation.y;
+        msg.pose.pose.orientation.z = orientation.x;
+        msg.pose.pose.orientation.w = orientation.y;
+
+        msg.header.frame_id = "world";
 
         prev_odom = odom;
 
@@ -82,47 +78,59 @@ public:
     }
 };
 
-void convertToOdom(const sensor_msgs::NavSatFix *msg, Vector *reference, Vector *result)
+Vector convertToOdom(const sensor_msgs::NavSatFix *msg, Vector reference)
 {
-    Vector geodetic, ref_ecef, ecef;
+    Vector geodetic, ref_ecef, ecef, result;
 
     geodetic.x = radians(msg->latitude);
     geodetic.y = radians(msg->longitude);
-    geodetic.z = radians(msg->altitude);
+    geodetic.z = msg->altitude;
 
-    geodetic_to_ECEF(&geodetic, &ecef);
-    geodetic_to_ECEF(reference, &ref_ecef);
+    ecef = geodetic_to_ECEF(geodetic);
 
-    ECEF_to_ONOM(&geodetic, &ecef, &ref_ecef, result);
+    result = ECEF_to_ONOM(ecef, reference);
+
+    return result;
 }
 
-void geodetic_to_ECEF(Vector *geodetic, Vector *result)
+Vector geodetic_to_ECEF(Vector geodetic)
 {
-    float x = geodetic->x;
-    float y = geodetic->y;
-    float z = geodetic->z;
+    Vector result;
+    float x = geodetic.x;
+    float y = geodetic.y;
+    float z = geodetic.z;
     float N, e_sqr;
 
     e_sqr = 1 - POLAR_RADIUS / EQUATORIAL_RADIUS * POLAR_RADIUS / EQUATORIAL_RADIUS;
     N = EQUATORIAL_RADIUS / sqrt(1 - e_sqr * sin(x));
 
-    result->x = (N + z) * cos(x) * cos(y);
-    result->y = (N + z) * cos(x) * sin(y);
-    result->z = (N * (1 - e_sqr) + z) * sin(x);
+    result.x = (N + z) * cos(x) * cos(y);
+    result.y = (N + z) * cos(x) * sin(y);
+    result.z = (N * (1 - e_sqr) + z) * sin(x);
+
+    return result;
 }
 
-void ECEF_to_ONOM(Vector *geodetic, Vector *ecef, Vector *reference, Vector *result)
+Vector ECEF_to_ONOM(Vector ecef, Vector reference)
 {
-    float x = ecef->x - reference->x;
-    float y = ecef->y - reference->y;
-    float z = ecef->z - reference->z;
+    Vector result, ref_ecef;
+    float x, y, z;
+    float lat, lon;
 
-    float lat = geodetic->x;
-    float lon = geodetic->y;
+    ref_ecef = geodetic_to_ECEF(reference);
 
-    result->x = -sin(lon) * x + cos(lon) * y;
-    result->y = -sin(lat) * cos(lon) * x - sin(lat) * sin(lon) * y + cos(lat) * z;
-    result->z = cos(lat) * cos(lon) * x + cos(lat) * sin(lon) * y + sin(lat) * z;
+    x = ecef.x - ref_ecef.x;
+    y = ecef.y - ref_ecef.y;
+    z = ecef.z - ref_ecef.z;
+
+    lat = reference.x;
+    lon = reference.y;
+
+    result.x = -sin(lon) * x + cos(lon) * y;
+    result.y = -sin(lat) * cos(lon) * x - sin(lat) * sin(lon) * y + cos(lat) * z;
+    result.z = cos(lat) * cos(lon) * x + cos(lat) * sin(lon) * y + sin(lat) * z;
+
+    return result;
 }
 
 Vector pointsDirection(Vector v, Vector s)
