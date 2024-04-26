@@ -21,8 +21,8 @@ public:
         transform.setRotation(tf::Quaternion(
             msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, msg->pose.pose.orientation.z, msg->pose.pose.orientation.w));
         br.sendTransform(tf::StampedTransform(transform, ros::Time::now(), root, child));
-        ROS_INFO("Root param name: %s", root.c_str());
-        ROS_INFO("Child param name: %s", child.c_str());
+        //ROS_INFO("Root param name: %s", root.c_str());
+        //ROS_INFO("Child param name: %s", child.c_str());
        
     }
 
