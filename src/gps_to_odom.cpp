@@ -149,6 +149,18 @@ float radians(float degrees)
     return degrees * (PI / 180);
 }
 
+Vector normalize(Vector v){
+    Vector result;
+    float d;
+
+    d = sqrt(pow(v.x, 2) + pow(v.y, 2))
+
+    result.x = v.x / d;
+    result.y = v.y / d;
+
+    return result
+}
+
 int main(int argc, char **argv)
 {
 
