@@ -1,6 +1,9 @@
 #include "ros/ros.h"
 #include "sensor_msgs/NavSatFix.h"
 #include "nav_msgs/Odometry.h"
+#include <tf2/LinearMath/Quaternion.h>
+#include <geometry_msgs/Quaternion.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 #include <cmath>
 
@@ -12,16 +15,17 @@ using namespace std;
 
 struct Vector
 {
-    float x;
-    float y;
-    float z;
+    double x;
+    double y;
+    double z;
 };
 
 Vector convertToOdom(const sensor_msgs::NavSatFix *, Vector);
 Vector geodetic_to_ECEF(Vector);
 Vector ECEF_to_ONOM(Vector, Vector);
-float radians(float);
-Vector pointsDirection(Vector, Vector);
+double radians(double);
+geometry_msgs::Quaternion pointsDirection(Vector, Vector);
+Vector normalize(Vector);
 
 class GpsToOdom
 {
@@ -36,6 +40,7 @@ private:
 
     Vector reference;
     Vector prev_odom = {0, 0, 0};
+    int count;
 
 public:
     GpsToOdom()
@@ -43,11 +48,16 @@ public:
         sub = n.subscribe("/fix", 1000, &GpsToOdom::navSatFixCallback, this);
         pub = n.advertise<nav_msgs::Odometry>("/gps_odom", 1);
 
-        timer = n.createTimer(ros::Duration(1), &GpsToOdom::odomCallback, this);
+        timer = n.createTimer(ros::Duration(0.1), &GpsToOdom::odomCallback, this);
 
         n.getParam("latitude_reference", reference.x);
         n.getParam("longitude_reference", reference.y);
         n.getParam("altitude_reference", reference.z);
+
+        reference.x = radians(reference.x);
+        reference.y = radians(reference.y);
+
+        count = 0;
     }
 
     void navSatFixCallback(const sensor_msgs::NavSatFix::ConstPtr &msg)
@@ -58,7 +68,8 @@ public:
     void odomCallback(const ros::TimerEvent &)
     {
         nav_msgs::Odometry msg;
-        Vector odom, orientation;
+        Vector odom;
+        geometry_msgs::Quaternion orientation;
 
         odom = convertToOdom(&(this->msg), reference);
 
@@ -67,12 +78,15 @@ public:
         msg.pose.pose.position.z = odom.z;
         
         orientation = pointsDirection(prev_odom, odom);
-        msg.pose.pose.orientation.z = orientation.x;
-        msg.pose.pose.orientation.w = orientation.y;
+        msg.pose.pose.orientation = orientation;
 
         msg.header.frame_id = "world";
 
-        prev_odom = odom;
+        if (count > 100) {
+            prev_odom = odom;
+            count = 0;
+        }
+        count++;
 
         pub.publish(msg);
     }
@@ -82,8 +96,8 @@ Vector convertToOdom(const sensor_msgs::NavSatFix *msg, Vector reference)
 {
     Vector geodetic, ref_ecef, ecef, result;
 
-    geodetic.x = radians(msg->latitude);
-    geodetic.y = radians(msg->longitude);
+    geodetic.x = radians((double) msg->latitude);
+    geodetic.y = radians((double) msg->longitude);
     geodetic.z = msg->altitude;
 
     ecef = geodetic_to_ECEF(geodetic);
@@ -96,10 +110,10 @@ Vector convertToOdom(const sensor_msgs::NavSatFix *msg, Vector reference)
 Vector geodetic_to_ECEF(Vector geodetic)
 {
     Vector result;
-    float x = geodetic.x;
-    float y = geodetic.y;
-    float z = geodetic.z;
-    float N, e_sqr;
+    double x = geodetic.x;
+    double y = geodetic.y;
+    double z = geodetic.z;
+    double N, e_sqr;
 
     e_sqr = 1 - POLAR_RADIUS / EQUATORIAL_RADIUS * POLAR_RADIUS / EQUATORIAL_RADIUS;
     N = EQUATORIAL_RADIUS / sqrt(1 - e_sqr * sin(x));
@@ -114,8 +128,8 @@ Vector geodetic_to_ECEF(Vector geodetic)
 Vector ECEF_to_ONOM(Vector ecef, Vector reference)
 {
     Vector result, ref_ecef;
-    float x, y, z;
-    float lat, lon;
+    double x, y, z;
+    double lat, lon;
 
     ref_ecef = geodetic_to_ECEF(reference);
 
@@ -133,20 +147,40 @@ Vector ECEF_to_ONOM(Vector ecef, Vector reference)
     return result;
 }
 
-Vector pointsDirection(Vector v, Vector s)
+geometry_msgs::Quaternion pointsDirection(Vector v, Vector s)
 {
-    float angle;
-    Vector orientation;
+    geometry_msgs::Quaternion orientation;
+    tf2::Quaternion quat;
+    
+    double dx = s.x - v.x;
+    double dy = s.y - v.y;
+    
+    quat.setRPY(0, 0, atan2(dy, dx));
 
-    orientation.x = s.x - v.x;
-    orientation.y = s.y - v.y;
+    tf2::convert(quat, orientation);
 
     return orientation;
 }
 
-float radians(float degrees)
+double radians(double degrees)
 {
     return degrees * (PI / 180);
+}
+
+Vector normalize(Vector v){
+    Vector result;
+    double d;
+
+    d = sqrt(pow(v.x, 2) + pow(v.y, 2));
+
+    if (d == 0) {
+        return v;
+    }
+
+    result.x = v.x / d;
+    result.y = v.y / d;
+
+    return result;
 }
 
 int main(int argc, char **argv)
