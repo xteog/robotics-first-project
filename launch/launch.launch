@@ -6,27 +6,25 @@
  <param name="longitude_reference" value="9.22674018" />
  <param name="altitude_reference" value="169.039" />
 
- 
  <node pkg="first_project" name="gps_to_odom" type="gps_to_odom"/>
  <node pkg="first_project" name="lidar_remap" type="lidar_remap"/>
 
-    <group>
-        <node pkg="first_project" name="wheel_odom_to_tf" type="odom_to_tf">
-            <param name="child_frame" value="wheel_odom" />
-            <remap from="input_odom" to="odom" />
+<group>
+    <node pkg="first_project" name="wheel_odom_to_tf" type="odom_to_tf">
+        <param name="child_frame" value="wheel_odom" />
+        <remap from="input_odom" to="odom" />
+    </node>
+</group>
 
-        </node>
-        
-    </group>
+<group>
+    <node pkg="first_project" name="odom_to_tf" type="odom_to_tf">
+        <param name="child_frame" value="gps_odom" />
+        <remap from="input_odom" to="gps_odom" />
 
-    <group>
-        <node pkg="first_project" name="odom_to_tf" type="odom_to_tf">
-            <param name="child_frame" value="gps_odom" />
-            <remap from="input_odom" to="gps_odom" />
-
-        </node>
-        
-    </group>
+    </node>
+</group>
     
-    
+<arg name="rvizconfig" default="$(find first_project)/rviz/urdf.rviz" />
+<node name="rviz" pkg="rviz" type="rviz" args="-d $(arg rvizconfig)" />
+
 </launch>

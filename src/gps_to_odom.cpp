@@ -48,7 +48,8 @@ public:
         sub = n.subscribe("/fix", 1000, &GpsToOdom::navSatFixCallback, this);
         pub = n.advertise<nav_msgs::Odometry>("/gps_odom", 1);
 
-        timer = n.createTimer(ros::Duration(0.1), &GpsToOdom::odomCallback, this);
+        // Uncomment this if you want use the timer.
+        // timer = n.createTimer(ros::Duration(0.1), &GpsToOdom::odomCallback, this);  
 
         n.getParam("latitude_reference", reference.x);
         n.getParam("longitude_reference", reference.y);
@@ -63,10 +64,12 @@ public:
     void navSatFixCallback(const sensor_msgs::NavSatFix::ConstPtr &msg)
     {
         this->msg = *msg;
+
+        // Comment this if you want to use the timer 
+        odomCallback();
     }
 
-    void odomCallback(const ros::TimerEvent &)
-    {
+    void odomCallback() {
         nav_msgs::Odometry msg;
         Vector odom;
         geometry_msgs::Quaternion orientation;
@@ -89,6 +92,11 @@ public:
         count++;
 
         pub.publish(msg);
+    }
+
+    void odomCallback(const ros::TimerEvent &)
+    {
+        odomCallback();
     }
 };
 
