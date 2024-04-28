@@ -1,4 +1,5 @@
 <launch>
+ <param name="use_sim_time" value="true" />
  <param name="root_frame" value="world" />
  <param name="child_frame" value="odom" />
  
