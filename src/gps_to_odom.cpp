@@ -91,6 +91,7 @@ public:
         }
         count++;
 
+        msg.header.stamp = this->msg.header.stamp;
         pub.publish(msg);
     }
 
