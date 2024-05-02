@@ -26,6 +26,7 @@ public:
     {
         sensor_msgs::PointCloud2 modifiedMsg = *msg;
         modifiedMsg.header.frame_id = odom_source;
+        modifiedMsg.header.stamp = msg->header.stamp;
         pub.publish(modifiedMsg);
         //ROS_INFO("header param name: %s", odom_source.c_str());
     }
