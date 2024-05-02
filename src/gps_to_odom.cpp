@@ -137,6 +137,7 @@ Vector ECEF_to_ONOM(Vector ecef, Vector reference)
 {
     Vector result, ref_ecef;
     double x, y, z;
+    double x_original, y_original, z_original;
     double lat, lon;
 
     ref_ecef = geodetic_to_ECEF(reference);
@@ -148,9 +149,15 @@ Vector ECEF_to_ONOM(Vector ecef, Vector reference)
     lat = reference.x;
     lon = reference.y;
 
-    result.x = -sin(lon) * x + cos(lon) * y;
-    result.y = -sin(lat) * cos(lon) * x - sin(lat) * sin(lon) * y + cos(lat) * z;
-    result.z = cos(lat) * cos(lon) * x + cos(lat) * sin(lon) * y + sin(lat) * z;
+    x_original = -sin(lon) * x + cos(lon) * y;
+    y_original = -sin(lat) * cos(lon) * x - sin(lat) * sin(lon) * y + cos(lat) * z;
+    z_original = cos(lat) * cos(lon) * x + cos(lat) * sin(lon) * y + sin(lat) * z;
+
+    // Correction of the gps odometry
+    result.x = -0.6428 * x_original -0.7660 * y_original;
+    result.y = +0.7660 * x_original -0.6428 * y_original;
+    result.z = z_original;
+
 
     return result;
 }
